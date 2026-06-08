@@ -35,6 +35,8 @@ ENV/
 
 # Project specific
 *.wav
+*.m4a
+output/
 output_*/
 basic_audio.wav
 full_conversation.wav

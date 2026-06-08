@@ -1,5 +1,20 @@
 # Decisions
 
+## 2026-06-08 - Convert generated WAVs to AAC/M4A and stage through ~/Library/Messages/ before iMessage delivery
+
+- Context:
+  - Needed a working channel to deliver generated audio to Yannick's phone for playback (chat attachments in this environment can't be played back). iMessage to his own number (`+49 171 3120124`) was the chosen channel.
+  - First attempt used the `mcp__Read_and_Send_iMessages__send_imessage` MCP tool with the `.wav` file path as the message — it just sent the literal path as text (the tool's schema is text-only, no attachment support).
+  - Second attempt drove Messages.app directly via `osascript` (`send (POSIX file "...") to targetBuddy`) from the `.wav`'s original location in `daily app/MisoTTS/`. `osascript` reported success, the attachment bubble appeared correctly in Messages.app, but delivery failed ("Not Delivered", red icon) — while plain-text messages to the same recipient delivered and were read instantly.
+  - Root cause (confirmed via web research, matches [anthropics/claude-plugins-official#1113](https://github.com/anthropics/claude-plugins-official/issues/1113)): Messages.app is sandboxed on macOS 15+ and can only read files from a small set of entitled directories (`~/Library/Messages/`, `~/Media/`, etc.). It accepts the `send` AppleEvent and returns success, but silently fails to actually read the file from an arbitrary path like `daily app/MisoTTS/output/` — no error is surfaced to `osascript`, hence the misleading "success" result paired with on-device "Not Delivered".
+- Decision:
+  - Standardize the delivery pipeline as: generate → save WAV to `output/<date>_<slug>.wav` → convert to AAC/M4A via macOS-native `afconvert -f m4af -d aac` (≈20x smaller, no audible quality loss for speech, and iMessage's native audio format) → copy into `~/Library/Messages/.send-staging/` → send via `osascript` from the staged path → clean up the staged copy.
+  - Always drive Messages.app directly via `mcp__Control_your_Mac__osascript` for attachment delivery — never the iMessage MCP tool, which can only send plain text.
+- Consequences:
+  - Smaller files (≈28KB vs ≈550KB for a 6-second clip) upload and deliver faster over iMessage.
+  - The staging directory is purely transient — must be cleaned up after each send to avoid accumulating copies in `~/Library/Messages/`.
+  - This pipeline is now documented in the vault's [[Text-to-Speech Generation Workflow]] as the canonical delivery method; any future MCP tooling for iMessage attachments should be checked against this sandbox constraint before being adopted as a replacement.
+
 ## 2026-06-08 - Accept CPU-only inference; do not pursue MPS acceleration for now
 
 - Context:
